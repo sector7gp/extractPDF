@@ -32,7 +32,8 @@ def extract_from_pdf(pdf_path, file_date):
     data = []
     # Regex pattern refined to capture:
     # 1: ID, 2: Manzana, 3: Lote, 4: Nombre, 5: Número de Infracción, 6: Monto
-    pattern = re.compile(r"(\d+)\s+Mz\s+(\d+)\s+Lote\s+(\d+)\s+(.*?)\s+Multas Infracción nro\s+(\d+):\s+Exceso de velocidad.*?\s+([\d.,]+)")
+    # Added $ to anchor the amount to the end of the line to avoid matching '30' in '(mas de 30 km/h)'
+    pattern = re.compile(r"(\d+)\s+Mz\s+(\d+)\s+Lote\s+(\d+)\s+(.*?)\s+Multas Infracción nro\s+(\d+):\s+Exceso de velocidad.*?\s+([\d.,]+)$")
     
     try:
         with pdfplumber.open(pdf_path) as pdf:
@@ -59,7 +60,7 @@ def extract_from_pdf(pdf_path, file_date):
 
 def main():
     # Target directory is updated as per user's preference
-    target_dir = Path("/Users/sector7gp/Downloads/SMT-2026")
+    target_dir = Path("/Users/sector7gp/Downloads/SMT")
     all_extracted_data = []
 
     print(f"Searching for PDFs in {target_dir.absolute()}...")
@@ -100,7 +101,7 @@ if __name__ == "__main__":
     assert parse_date_from_filename("Agosto 2025.pdf") == "2025-08-01"
     assert parse_date_from_filename("Mayo 2025.pdf") == "2025-05-01"
     
-    re_pattern = re.compile(r"(\d+)\s+Mz\s+(\d+)\s+Lote\s+(\d+)\s+(.*?)\s+Multas Infracción nro\s+(\d+):\s+Exceso de velocidad.*?\s+([\d.,]+)")
+    re_pattern = re.compile(r"(\d+)\s+Mz\s+(\d+)\s+Lote\s+(\d+)\s+(.*?)\s+Multas Infracción nro\s+(\d+):\s+Exceso de velocidad.*?\s+([\d.,]+)$")
     for tl in test_lines:
         match = re_pattern.search(tl)
         assert match, f"Regex failed on test line: {tl}"
