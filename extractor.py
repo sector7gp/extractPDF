@@ -10,6 +10,19 @@ MONTH_MAP = {
     'septiembre': '09', 'octubre': '10', 'noviembre': '11', 'diciembre': '12'
 }
 
+def format_amount_iso(amount_str):
+    """
+    Converts '65.171,77' (Spanish/Argentine format) to '65171.77' (ISO/Standard format).
+    """
+    if not amount_str:
+        return "0.00"
+    # Remove thousand separators (.) and replace decimal comma (,) with point (.)
+    normalized = amount_str.replace('.', '').replace(',', '.')
+    try:
+        return f"{float(normalized):.2f}"
+    except ValueError:
+        return normalized
+
 def parse_date_from_filename(filename):
     """
     Parses 'Month Year' (e.g., 'Agosto 2025.pdf') into ISO format 'YYYY-MM-DD'.
@@ -30,10 +43,16 @@ def extract_from_pdf(pdf_path, file_date):
     Extracts 'Exceso de velocidad' data from a PDF file.
     """
     data = []
+    # Counter for sequential IDs when infraction number is missing
+    fallback_counter = 1
+    # Format date for fallback ID: YYYY-MM-DD -> YYMMDD
+    date_parts = file_date.split('-')
+    fallback_date_prefix = f"{date_parts[0][2:]}{date_parts[1]}{date_parts[2]}"
+
     # Regex pattern refined to capture:
-    # 1: ID, 2: Manzana, 3: Lote, 4: Nombre, 5: Número de Infracción, 6: Monto
-    # Added $ to anchor the amount to the end of the line to avoid matching '30' in '(mas de 30 km/h)'
-    pattern = re.compile(r"(\d+)\s+Mz\s+(\d+)\s+Lote\s+(\d+)\s+(.*?)\s+Multas Infracción nro\s+(\d+):\s+Exceso de velocidad.*?\s+([\d.,]+)$")
+    # 1: ID, 2: Manzana, 3: Lote, 4: Nombre, 5: Número de Infracción (optional), 6: Monto
+    # Supports "Multas Infracción nro XXX: Exceso de velocidad" and "Multas Multa Velocidad"
+    pattern = re.compile(r"(\d+)\s+Mz\s+(\d+)\s+Lote\s+(\d+)\s+(.*?)\s+Multas\s+(?:Infracción nro\s+(\d+):\s+)?(?:Exceso de velocidad|Multa Velocidad).*?\s+([\d.,]+)$")
     
     try:
         with pdfplumber.open(pdf_path) as pdf:
@@ -45,13 +64,18 @@ def extract_from_pdf(pdf_path, file_date):
                 for line in text.split('\n'):
                     match = pattern.search(line)
                     if match:
+                        infraction_num = match.group(5)
+                        if not infraction_num:
+                            infraction_num = f"{fallback_date_prefix}{fallback_counter:02d}"
+                            fallback_counter += 1
+                        
                         data.append({
                             'Fecha': file_date,
                             'Manzana': match.group(2),
                             'Lote': match.group(3),
                             'Nombre': match.group(4).strip(),
-                            'Número de Infracción': match.group(5),
-                            'Monto': match.group(6)
+                            'Número de Infracción': infraction_num,
+                            'Monto': format_amount_iso(match.group(6))
                         })
     except Exception as e:
         print(f"Error processing {pdf_path}: {e}")
@@ -60,7 +84,7 @@ def extract_from_pdf(pdf_path, file_date):
 
 def main():
     # Target directory is updated as per user's preference
-    target_dir = Path("/Users/sector7gp/Downloads/SMT")
+    target_dir = Path("./")
     all_extracted_data = []
 
     print(f"Searching for PDFs in {target_dir.absolute()}...")
@@ -84,8 +108,8 @@ def main():
         df = df[cols]
         
         output_file = "expenses.csv"
-        # Using semicolon as separator as requested/implied
-        df.to_csv(output_file, index=False, sep=';', encoding='utf-8-sig')
+        # Using comma as separator as requested
+        df.to_csv(output_file, index=False, sep=',', encoding='utf-8-sig')
         print(f"\nSuccess! Extracted {len(all_extracted_data)} entries.")
         print(f"Data saved to {output_file}")
     else:
@@ -95,15 +119,30 @@ if __name__ == "__main__":
     # Test cases for the refined regex and date parsing
     test_lines = [
         "613 Mz 2 Lote 21 Heuser Mariano Multas Infracción nro 1073: Exceso de velocidad (mas de 30 km/h) 65.171,77",
+        "426 Mz 10 Lote 4 Jullian Viviana Rhodius A. Multas Multa Velocidad 64.147,00"
     ]
     
     # Test date parsing
     assert parse_date_from_filename("Agosto 2025.pdf") == "2025-08-01"
     assert parse_date_from_filename("Mayo 2025.pdf") == "2025-05-01"
     
-    re_pattern = re.compile(r"(\d+)\s+Mz\s+(\d+)\s+Lote\s+(\d+)\s+(.*?)\s+Multas Infracción nro\s+(\d+):\s+Exceso de velocidad.*?\s+([\d.,]+)$")
+    re_pattern = re.compile(r"(\d+)\s+Mz\s+(\d+)\s+Lote\s+(\d+)\s+(.*?)\s+Multas\s+(?:Infracción nro\s+(\d+):\s+)?(?:Exceso de velocidad|Multa Velocidad).*?\s+([\d.,]+)$")
+    
+    # Test fallback ID logic
+    test_date = "2024-08-01"
+    date_parts = test_date.split('-')
+    prefix = f"{date_parts[0][2:]}{date_parts[1]}{date_parts[2]}"
+    counter = 1
+    
     for tl in test_lines:
         match = re_pattern.search(tl)
         assert match, f"Regex failed on test line: {tl}"
+        
+        infraction = match.group(5)
+        if not infraction:
+            infraction = f"{prefix}{counter:02d}"
+            counter += 1
+            
+        print(f"Test match: {match.group(4).strip()} -> ID: {infraction}, Amount: {format_amount_iso(match.group(6))}")
         
     main()
